@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <h1>Data Refresh Dashboard</h1>
+        <p class="text-muted">Last updated: {{ current_time }}</p>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Database Connections</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6">
+                        <div class="d-flex align-items-center">
+                            <span class="badge bg-{{ 'success' if connection_status.source else 'danger' }} me-2">
+                                {{ '●' }}
+                            </span>
+                            <span>Source DB</span>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="d-flex align-items-center">
+                            <span class="badge bg-{{ 'success' if connection_status.target else 'danger' }} me-2">
+                                {{ '●' }}
+                            </span>
+                            <span>Target DB</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <button class="btn btn-sm btn-outline-primary" onclick="testConnections()">
+                        Test Connections
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <button class="btn btn-primary me-2" onclick="refreshAllTables()">
+                    Refresh All Tables
+                </button>
+                <button class="btn btn-outline-secondary" onclick="refreshStatus()">
+                    Refresh Status
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Table Status</h5>
+            </div>
+            <div class="card-body">
+                {% if table_status %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Table Name</th>
+                                <th>Strategy</th>
+                                <th>Sync Mode</th>
+                                <th>Source Count</th>
+                                <th>Target Count</th>
+                                <th>Max Values</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for table in table_status %}
+                            <tr>
+                                <td><strong>{{ table.table_name }}</strong></td>
+                                <td>
+                                    <span class="badge bg-secondary">{{ table.strategy }}</span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-info">{{ table.sync_mode }}</span>
+                                </td>
+                                <td>
+                                    {% if table.error %}
+                                        <span class="text-danger">Error</span>
+                                    {% else %}
+                                        {{ "{:,}".format(table.source_count) if table.source_count is not none else "N/A" }}
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if table.error %}
+                                        <span class="text-danger">Error</span>
+                                    {% else %}
+                                        {{ "{:,}".format(table.target_count) if table.target_count is not none else "N/A" }}
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if table.source_max_value or table.target_max_value %}
+                                        <small>
+                                            S: {{ table.source_max_value[:20] + '...' if table.source_max_value and table.source_max_value|length > 20 else table.source_max_value or 'N/A' }}<br>
+                                            T: {{ table.target_max_value[:20] + '...' if table.target_max_value and table.target_max_value|length > 20 else table.target_max_value or 'N/A' }}
+                                        </small>
+                                    {% else %}
+                                        <span class="text-muted">N/A</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary" 
+                                            onclick="refreshTable('{{ table.table_name }}')">
+                                        Refresh
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-4">
+                    <p class="text-muted">No table information available</p>
+                    <button class="btn btn-primary" onclick="refreshStatus()">Load Table Status</button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="progressModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Processing...</h5>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border spinner-border-sm me-3" role="status"></div>
+                    <span id="progressText">Please wait...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showProgress(message) {
+    document.getElementById('progressText').textContent = message;
+    new bootstrap.Modal(document.getElementById('progressModal')).show();
+}
+
+function hideProgress() {
+    bootstrap.Modal.getInstance(document.getElementById('progressModal')).hide();
+}
+
+function refreshStatus() {
+    location.reload();
+}
+
+function testConnections() {
+    showProgress('Testing database connections...');
+    
+    fetch('/api/test-connections')
+        .then(response => response.json())
+        .then(data => {
+            hideProgress();
+            if (data.error) {
+                alert('Error: ' + data.error);
+            } else {
+                const status = data.source && data.target ? 'All connections OK' : 'Some connections failed';
+                alert(status + '\nSource: ' + (data.source ? 'OK' : 'Failed') + '\nTarget: ' + (data.target ? 'OK' : 'Failed'));
+                refreshStatus();
+            }
+        })
+        .catch(error => {
+            hideProgress();
+            alert('Error testing connections: ' + error);
+        });
+}
+
+function refreshTable(tableName) {
+    if (!confirm('Refresh table "' + tableName + '"?')) {
+        return;
+    }
+    
+    showProgress('Refreshing table ' + tableName + '...');
+    
+    fetch('/api/refresh', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ table: tableName })
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideProgress();
+        if (data.error) {
+            alert('Error: ' + data.error);
+        } else if (data.status === 'success') {
+            alert('Successfully refreshed ' + tableName + '\nRows processed: ' + (data.rows_processed || 0));
+            refreshStatus();
+        } else {
+            alert('Refresh completed with status: ' + data.status);
+            refreshStatus();
+        }
+    })
+    .catch(error => {
+        hideProgress();
+        alert('Error refreshing table: ' + error);
+    });
+}
+
+function refreshAllTables() {
+    if (!confirm('Refresh all tables? This may take a while.')) {
+        return;
+    }
+    
+    showProgress('Refreshing all tables...');
+    
+    fetch('/api/refresh', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideProgress();
+        if (data.error) {
+            alert('Error: ' + data.error);
+        } else if (Array.isArray(data)) {
+            const successful = data.filter(r => r.status === 'success').length;
+            const failed = data.filter(r => r.status === 'error').length;
+            alert('Refresh completed\nSuccessful: ' + successful + '\nFailed: ' + failed);
+            refreshStatus();
+        } else {
+            alert('Refresh completed');
+            refreshStatus();
+        }
+    })
+    .catch(error => {
+        hideProgress();
+        alert('Error refreshing tables: ' + error);
+    });
+}
+</script>
+{% endblock %}

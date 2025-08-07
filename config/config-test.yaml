@@ -1,0 +1,24 @@
+databases:
+  source:
+    server: "localhost"
+    database: "TestSource"
+    auth_type: "sql"
+  target:
+    server: "localhost"
+    database: "TestTarget"
+    auth_type: "sql"
+
+tables:
+  - name: "Users"
+    strategy: "simple_copy"
+    sync_mode: "full_replace"
+    truncate_target: true
+    row_limit: 100
+
+settings:
+  default_batch_size: 10
+  connection_timeout: 30
+  command_timeout: 60
+  max_retries: 2
+  dry_run: true
+  verbose_logging: true

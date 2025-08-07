@@ -1,0 +1,44 @@
+databases:
+  source:
+    server: "prod-sql-server"
+    database: "ProductionDB"
+    auth_type: "windows"
+  target:
+    server: "uat-sql-server"
+    database: "UATDB"
+    auth_type: "sql"
+
+tables:
+  - name: "Users"
+    strategy: "simple_copy"
+    sync_mode: "full_replace"
+    truncate_target: true
+    
+  - name: "Orders"
+    strategy: "simple_copy"
+    sync_mode: "incremental"
+    incremental_column: "order_id"
+    incremental_type: "identity"
+    
+  - name: "DailyReports"
+    strategy: "staging_partition_switch"
+    sync_mode: "incremental"
+    incremental_column: "report_date"
+    incremental_type: "date"
+    date_buffer_days: 7
+    batch_size: 10000
+    partition_function: "pf_DailyReports"
+    partition_scheme: "ps_DailyReports"
+    
+  - name: "ProductCatalog"
+    strategy: "simple_copy"
+    sync_mode: "smart_sync"
+    incremental_column: "last_modified"
+    incremental_type: "datetime"
+    fallback_to_full: true
+
+settings:
+  default_batch_size: 5000
+  connection_timeout: 30
+  command_timeout: 300
+  max_retries: 3
